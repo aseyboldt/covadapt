@@ -30,8 +30,8 @@ def soft_l1_hessep(v, x, alpha):
 
 #@numba.njit
 def cost(v, samples, gamma, alpha):
-    
-    #k = samples.shape[0]
+    k = samples.shape[0]
+
     #x_neg, x_pos = v[0], v[1]
 
     #A_xpos = samples.T @ (samples @ x_pos)
@@ -121,6 +121,10 @@ def find_eigvec(samples, gamma, orthogonal_to=None, alpha=1e6):
     vec = opt.x / linalg.norm(opt.x)
     k = samples.shape[0]
     return vec, vec @ (samples.T @ (samples @ vec)) / k
+
+
+def remove_axis(samples, vec):
+    return samples - np.dot(samples, vec)[:, None] * vec[None, :]
 
 
 def eigh_regularized_grad(samples, grad_samples, n_eigs, n_eigs_grad, gamma, gamma_grad, alpha=1e5):
