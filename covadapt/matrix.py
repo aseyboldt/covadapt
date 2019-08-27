@@ -20,14 +20,14 @@ class SPDMatrix:
 spec = [
     ('n', numba.uint64),
     ('k', numba.uint64),
-    ('_eigvecs', numba.float64[::, ::1]),
+    ('_eigvecs', numba.float64[::1, :]),
     ('_eigvals', numba.float64[::1]),
     ('_scale', numba.float64),
     ('_long_tmp', numba.float64[::1]),
     ('_short_tmp', numba.float64[::1]),
 ]
 
-#@jitclass(spec)
+@numba.jitclass(spec)
 class Eigvals(SPDMatrix):
     """"""
     def __init__(self, eigvals, eigvecs, others):
@@ -55,7 +55,8 @@ class Eigvals(SPDMatrix):
         np.dot(self._eigvecs, self._short_tmp, out=out)
         
         out[:] -= self._long_tmp
-        out[:] *= self._scale
+        if self._scale != 1:
+            out[:] *= self._scale
     
     def inv(self):
         eigs = 1 / (self._eigvals * self._scale)
@@ -83,7 +84,8 @@ class Eigvals(SPDMatrix):
         np.dot(self._eigvecs, self._short_tmp, out=out)
 
         out[:] -= self._long_tmp
-        out[:] *= np.sqrt(self._scale)
+        if self._scale != 1:
+            out[:] *= np.sqrt(self._scale)
 
 
 spd_type_diag = numba.deferred_type()
@@ -96,7 +98,7 @@ spec = [
     ('_tmp', numba.float64[::1]),
 ]
 
-#@numba.jitclass(spec)
+@numba.jitclass(spec)
 class DiagScaled(SPDMatrix):
     def __init__(self, diag, inner_spd):
         self.n = len(diag)
@@ -128,6 +130,8 @@ class DiagScaled(SPDMatrix):
         self._diag = diag
         self._diag_sqrt = np.sqrt(diag)
 
+
+spd_type_diag.define(Eigvals.class_type.instance_type)
 
 def kondition_number(A, B):
     eigvals = linalg.eigvalsh(A, B)

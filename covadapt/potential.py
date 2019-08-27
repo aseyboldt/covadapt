@@ -48,7 +48,9 @@ class EigvalsL1Adapt(QuadPotential):
         self._samples = []
         self._grads = []
         
-        inner = Eigvals(np.zeros((0,)), np.zeros((n, 0)), 1)
+        # Work around numba bug #3569
+        vecs = np.ones((n, 2)).copy('F')
+        inner = Eigvals(np.ones((2,)), vecs, 1)
         self._cov = DiagScaled(initial_diag, inner)
         self._cov_inv = self._cov.inv()
         self._gamma = gamma
