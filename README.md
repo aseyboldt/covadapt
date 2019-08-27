@@ -5,7 +5,15 @@ mass matrices for hamiltonian MCMC samplers, specifically for pymc3.
 
 *This is for experimentation only! Do not use!*
 
-# Example
+## Install
+
+Make sure you have pymc3 and numba installed. Then do
+
+```
+pip install git+https://github.com/aseyboldt/covadapt.git
+```
+
+## Example
 
 ```python
 import covadapt.potential
