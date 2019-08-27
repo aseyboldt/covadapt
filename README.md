@@ -127,7 +127,7 @@ with pm.Model() as model:
 ## How it works
 
 Given some eigenvectors Q and eigenvalues Σ, we can represent a covariance
-matrix :math:$C = I + QΣQ^T - QQ^T$ without storing anything more than those
+matrix $C = I + QΣQ^T - QQ^T$ without storing anything more than those
 few vectors. The resulting matrix has the given eigenvectors and values,
 all other eigenvalues are 1. In order to run NUTS or some othe HMC we need
 matrix vector products $Cv$ and $C^{-\tfrac{1}{2}}v$, where $C^{-\tfrac{1}{2}}$
@@ -149,19 +149,18 @@ covariant while the values are contravariant, and for the standard normal both
 inner products are the identity). So we can do the same we did with the
 samples, but with the gradients at the positions of the samples.  This will
 give use estimates of the *small* eigenvalues of the posterior covariance.
-Unfortunatly, the two sets of eigenvectors that we got here are not orthogonal.
-I take the mean of the two estimates on the matrix-log scale and estimate
-small and large eigenvectors of that mean.
-This is `covadapt.eigvals_lw.eigh_regularized_grad`.
+Unfortunatly, the two sets of eigenvectors are not orthogonal.  I take the mean
+of the two estimates on the matrix-log scale and estimate small and large
+eigenvectors of that mean.  This is `covadapt.eigvals_lw.eigh_regularized_grad`.
 
 ## Some random rambling
 
 The third option is trying to use a different way to regularize eigenvector
-estimates: We can define the eigenvector of a matrix as $\argmax_{x\in S_n}
+estimates: We can define the eigenvector of a matrix as $\argmax_{|x| = 1}
 x^TCx$.  We can modify this to include some regularization:
 
 $$
-\argmax_{x \in S_n} x^Tx - \gamma |x|_1.
+\argmax_{|x| = 1} x^Tx - \gamma |x|_1.
 $$
 
 Unfortunately this introduces some problems, as the objective is not convex,
@@ -170,7 +169,7 @@ Németh, Sándor. (2014). Concepts and techniques of Optimization on the sphere.
 Top. accepted.) and the loss is not differentiable at $x_i = 0$. There is quite
 a lot of literature about optimization with l1 loss, so maybe this would work
 out better with a bit of work. The parameter gamma could maybe be estimated
-using cross validation of the dataset somehow.
+using cross validation of the samples.
 
 The current `covadapt.eigvals_reg` code uses this approch.
 
@@ -178,6 +177,6 @@ Alternatively we could also try to do the whole regularized PCA in one go,
 and optimize something like: Given posterior samples $X$, find $Q$ orthogonal,
 $D$ diagonal and $\Sigma$ such that
 $$
-\text{std_normal_logp}(C^{-\tfrac{1}{2}}X)
+\text{std_normal_logp}(C^{-\tfrac{1}{2}}X) - \gamma |Q|_1
 $$
 is minimal, where $C^{-\tfrac{1}{2}} = (I + Q^T\Sigma^{-1/2}Q - Q^TQ)D^{-1/2}$.
