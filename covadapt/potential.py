@@ -11,7 +11,7 @@ from covadapt.matrix import Eigvals, DiagScaled
 
 class EigvalsAdapt(QuadPotential):
     def __init__(self, n, initial_mean, eigvalsfunc, eigvalsfunc_kwargs, initial_diag=None, initial_weight=0,
-                 adaptation_window=303, dtype=None):
+                 adaptation_window=303, dtype=None, display=False):
         """Set up a diagonal mass matrix."""
         if initial_diag is not None and initial_diag.ndim != 1:
             raise ValueError('Initial diagonal must be one-dimensional.')
@@ -52,6 +52,7 @@ class EigvalsAdapt(QuadPotential):
         inner = Eigvals(np.ones((2,)), vecs, 1)
         self._cov = DiagScaled(initial_diag, inner)
         self._cov_inv = self._cov.inv()
+        self._display = display
 
     def velocity(self, x, out=None):
         """Compute the current velocity at a position in parameter space."""
@@ -84,7 +85,8 @@ class EigvalsAdapt(QuadPotential):
         self._cov_inv = self._cov.inv()
     
     def _update_from_samples_grads(self, samples, grads):
-        print("n_samples", len(samples))
+        if self._display:
+            print("n_samples", len(samples))
         
         samples = np.array(samples)
         grads = np.array(grads)
@@ -101,8 +103,9 @@ class EigvalsAdapt(QuadPotential):
         start = time.time()
         vals, vecs = self._eigvalsfunc(samples, grads, **self._eigvalsfunc_kwargs)
         end = time.time()
-        print("Finding eigenvalues took %ss" % (end - start))
-        print("eigvals", vals)
+        if self._display:
+            print("Finding eigenvalues took %ss" % (end - start))
+            print("eigvals", vals)
         #others = vals[n_eigs - 2 : n_eigs + 2].mean()
         #print("others", others)
         others = 1.
