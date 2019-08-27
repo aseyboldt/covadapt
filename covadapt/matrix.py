@@ -88,6 +88,48 @@ class Eigvals(SPDMatrix):
             out[:] *= np.sqrt(self._scale)
 
 
+spec = [
+    ('n', numba.uint64),
+    ('k', numba.uint64),
+    ('_shrinkage', numba.float64),
+    ('_samples', numba.float64[:, ::1]),
+    ('_long_tmp', numba.float64[::1]),
+    ('_short_tmp', numba.float64[::1]),
+]
+
+@numba.jitclass(spec)
+class LedoitWolf(SPDMatrix):
+    """"""
+    def __init__(self, samples, shrinkage):
+        self.k, self.n = samples.shape
+        self._samples = samples
+        self._shrinkage = shrinkage
+        self._short_tmp = np.zeros(self.k)
+        self._long_tmp = np.zeros(self.n)
+
+    def matmult(self, v, out):
+        # (samples.T @ samples  + shrinkage * eye) @ v
+
+        np.dot(self._samples, v, out=self._short_tmp)
+        np.dot(self._samples.T, self._short_tmp, out=out)
+        out[:] /= self.k
+        out[:] += self._shrinkage * v
+    
+    def inv(self):
+        raise NotImplementedError()
+    
+    def quadform(self, v):
+        self.matmult(v, self._long_tmp)
+        return np.inner(v, self._long_tmp)
+
+    def draw(self, out):
+        v = np.random.randn(self.n)
+        self.sqrt_matmult(v, out)
+    
+    def sqrt_matmult(self, v, out):
+        raise NotImplementedError()
+
+
 spd_type_diag = numba.deferred_type()
         
 spec = [

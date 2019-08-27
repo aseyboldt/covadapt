@@ -7,11 +7,10 @@ from pymc3.math import floatX
 import numpy as np
 
 from covadapt.matrix import Eigvals, DiagScaled
-from covadapt.eigvals import eigh_regularized_grad
 
 
-class EigvalsL1Adapt(QuadPotential):
-    def __init__(self, n, initial_mean, gamma, n_eigs, n_grads, initial_diag=None, initial_weight=0,
+class EigvalsAdapt(QuadPotential):
+    def __init__(self, n, initial_mean, eigvalsfunc, eigvalsfunc_kwargs, initial_diag=None, initial_weight=0,
                  adaptation_window=303, dtype=None):
         """Set up a diagonal mass matrix."""
         if initial_diag is not None and initial_diag.ndim != 1:
@@ -32,8 +31,8 @@ class EigvalsL1Adapt(QuadPotential):
             initial_diag = np.ones(n, dtype=dtype)
             initial_weight = 1
 
-        self._n_eigs = n_eigs
-        self._n_grads = n_grads
+        self._eigvalsfunc = eigvalsfunc
+        self._eigvalsfunc_kwargs = eigvalsfunc_kwargs
 
         self.dtype = dtype
         self._n = n
@@ -53,7 +52,6 @@ class EigvalsL1Adapt(QuadPotential):
         inner = Eigvals(np.ones((2,)), vecs, 1)
         self._cov = DiagScaled(initial_diag, inner)
         self._cov_inv = self._cov.inv()
-        self._gamma = gamma
 
     def velocity(self, x, out=None):
         """Compute the current velocity at a position in parameter space."""
@@ -87,9 +85,6 @@ class EigvalsL1Adapt(QuadPotential):
     
     def _update_from_samples_grads(self, samples, grads):
         print("n_samples", len(samples))
-        gamma = self._gamma
-        n_eigs = self._n_eigs
-        n_grads = self._n_grads
         
         samples = np.array(samples)
         grads = np.array(grads)
@@ -104,17 +99,16 @@ class EigvalsL1Adapt(QuadPotential):
         #print("svdvals samples", linalg.svdvals(samples.T))
         #print("svdvals grads", linalg.svdvals(grads.T))
         start = time.time()
-        vals, vecs = eigh_regularized_grad(
-            samples, grads, n_eigs, n_grads, gamma, gamma)
+        vals, vecs = self._eigvalsfunc(samples, grads, **self._eigvalsfunc_kwargs)
         end = time.time()
-        print("optimization took %ss" % (end - start))
+        print("Finding eigenvalues took %ss" % (end - start))
         print("eigvals", vals)
         #others = vals[n_eigs - 2 : n_eigs + 2].mean()
         #print("others", others)
         others = 1.
         #print("others", others)
         #print()
-        inner = Eigvals(np.array(vals), np.array(vecs), others)
+        inner = Eigvals(np.array(vals), np.array(vecs, order='F'), others)
         self._cov.update_inner(inner)
         self._cov_inv = self._cov.inv()
 
