@@ -112,7 +112,7 @@ class LedoitWolf(SPDMatrix):
 
         np.dot(self._samples, v, out=self._short_tmp)
         np.dot(self._samples.T, self._short_tmp, out=out)
-        out[:] /= self.k
+        out[:] *= (1 - self._shrinkage) / self.k
         out[:] += self._shrinkage * v
     
     def inv(self):
