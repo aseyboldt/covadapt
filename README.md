@@ -3,7 +3,9 @@
 This is an experimental implementation of a low rank approximation of
 mass matrices for hamiltonian MCMC samplers, specifically for pymc3.
 
-*This is for experimentation only! Do not use!*
+*This is for experimentation only! Do not use for actual work (yet)!*
+
+But feel welcome to try it out, and tell me how it worked for your models!
 
 ## Install
 
@@ -180,3 +182,5 @@ $$
 \text{std_normal_logp}(C^{-\tfrac{1}{2}}X) - \gamma |Q|_1
 $$
 is minimal, where $C^{-\tfrac{1}{2}} = (I + Q^T\Sigma^{-1/2}Q - Q^TQ)D^{-1/2}$.
+
+Paper about sparse eigenvectors: https://arxiv.org/pdf/1408.6686.pdf
