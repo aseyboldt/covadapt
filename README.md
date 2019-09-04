@@ -155,6 +155,15 @@ Unfortunatly, the two sets of eigenvectors are not orthogonal.  I take the mean
 of the two estimates on the matrix-log scale and estimate small and large
 eigenvectors of that mean.  This is `covadapt.eigvals_lw.eigh_regularized_grad`.
 
+## Acknowledgment
+
+A lot of the work that went into this package was during my time at Quantopian,
+while trying to improve sampling of a (pretty awesome) model for portfolio
+optimization. Thanks a lot for making that possible!
+
+![Quantopian logo](https://raw.githubusercontent.com/pymc-devs/pymc3/master/docs/quantopianlogo.jpg)
+
+
 ## Some random rambling
 
 The third option is trying to use a different way to regularize eigenvector
