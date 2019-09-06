@@ -129,7 +129,7 @@ class EigvalsAdapt(QuadPotential):
 
         self._foreground_var.add_sample(sample, weight=1)
         self._background_var.add_sample(sample, weight=1)
-        
+
 
         if self._n_samples > 0 and self._n_samples % window == 0:
             self._update_from_weightvar(self._foreground_var)
