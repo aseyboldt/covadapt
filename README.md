@@ -39,16 +39,16 @@ You can use one of the three methods like this:
 pot = covadapt.potential.EigvalsAdapt(
     model.ndim,
     np.zeros(model.ndim),
-    covadapt.eigvals_reg.eigh_regularized_grad,
-    eigvalsfunc_kwargs=dict(
-        n_eigs=3, 
-        n_eigs_grad=3,
-        gamma=50,
-        gamma_grad=50,
-    ),
-    adaptation_window=200,
+    estimators=[
+        lambda samples, grads:
+            covadapt.eigvals_lw.eigh_lw_samples_grads(
+                samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
+            )
+    ],
+    display=True,
 )
 
+# TODO Update doc
 pot2 = covadapt.potential.EigvalsAdapt(
     model.ndim,
     np.zeros(model.ndim),
@@ -59,6 +59,7 @@ pot2 = covadapt.potential.EigvalsAdapt(
     adaptation_window=200,
 )
 
+# TODO Update doc
 pot3 = covadapt.potential.EigvalsAdapt(
     model.ndim,
     np.zeros(model.ndim),
@@ -80,16 +81,16 @@ import pymc3 as pm
 with pm.Model() as model:
     pm.Normal('y', shape=100)
 
-    pot3 = covadapt.potential.EigvalsAdapt(
+    pot = covadapt.potential.EigvalsAdapt(
         model.ndim,
         np.zeros(model.ndim),
-        covadapt.eigvals_lw.eigh_lw_samples_grads,
-        eigvalsfunc_kwargs=dict(
-            n_eigs=6,
-            n_eigs_grad=6,
-            n_final=15,
-        ),
-        adaptation_window=200,
+        estimators=[
+            lambda samples, grads:
+                covadapt.eigvals_lw.eigh_lw_samples_grads(
+                    samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
+                )
+        ],
+        display=True,
     )
     step = pm.NUTS(potential=pot)
     trace = pm.sample(step=step, draws=1000, tune=2000, chains=4)
@@ -114,14 +115,15 @@ with pm.Model() as model:
     pot = covadapt.potential.EigvalsAdapt(
         model.ndim,
         np.zeros(model.ndim),
-        covadapt.eigvals_lw.eigh_lw_samples_grads,
-        eigvalsfunc_kwargs=dict(
-            n_eigs=6,
-            n_eigs_grad=6,
-            n_final=15,
-        ),
-        adaptation_window=200,
+        estimators=[
+            lambda samples, grads:
+                covadapt.eigvals_lw.eigh_lw_samples_grads(
+                    samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
+                )
+        ],
+        display=True,
     )
+
     step = pm.NUTS(potential=pot)
     trace = pm.sample(step=step, draws=1000, tune=2000, chains=4)
 ```
