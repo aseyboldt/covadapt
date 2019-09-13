@@ -42,7 +42,7 @@ pot = covadapt.potential.EigvalsAdapt(
     estimators=[
         lambda samples, grads:
             covadapt.eigvals_lw.eigh_lw_samples_grads(
-                samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
+                samples, grads, n_eigs=10, n_eigs_grad=10, n_final=10
             )
     ],
     display=True,
