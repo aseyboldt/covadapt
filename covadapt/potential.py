@@ -19,10 +19,10 @@ class EigvalsAdapt(QuadPotential):
         estimators,
         initial_diag=None,
         initial_weight=0,
-        adaptation_window=200,
+        adaptation_window=300,
         dtype=None,
         display=False,
-        cutoff=0.4,
+        cutoff=0.7,
     ):
         """Set up a diagonal mass matrix."""
         if initial_diag is not None and initial_diag.ndim != 1:
@@ -147,7 +147,7 @@ class EigvalsAdapt(QuadPotential):
 
         if (
             self._n_samples >= self._n_diag_only
-            and (self._n_samples - self._n_diag_only) % window == 0
+            and (self._n_samples - self._n_diag_only) % (window // 3) == 0
         ):
             self._update_offdiag(list(self._samples), list(self._grads))
 
@@ -209,7 +209,5 @@ def eigvals_from_window(samples, grads, n_test, estimators, cutoff):
 
     final_vecs = np.array(final_vecs).T
     final_vars = np.array(final_vars)
-
-    #print(final_vecs[:, 0] @ test_samples.T @ test_samples @ final_vecs[:, 0] / len(test_samples))
 
     return stds, final_vars, final_vecs

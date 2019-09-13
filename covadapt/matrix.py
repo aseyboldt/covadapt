@@ -93,7 +93,7 @@ spec = [
     ('_diag_sqrt', numba.float64[::1])
 ]
 
-@numba.jitclass(spec)
+#@numba.jitclass(spec)
 class Diag:
     def __init__(self, diag):
         self.n = len(diag)
@@ -101,10 +101,11 @@ class Diag:
         self._diag_sqrt = np.sqrt(diag)
 
     def matmult(self, v, out):
-        assert len(v) == len(out)
-        assert len(v) == self.n
-        for i in range(self.n):
-            out[i] = v[i] * self._diag[i]
+        #assert len(v) == len(out)
+        #assert len(v) == self.n
+        #for i in range(self.n):
+        #    out[i] = v[i] * self._diag[i]
+        np.multiply(v, self._diag, out)
 
     def draw(self, out):
         out[:] = np.random.randn(self.n)
@@ -135,7 +136,7 @@ spec = [
     ('_short_tmp', numba.float64[::1]),
 ]
 
-@numba.jitclass(spec)
+#@numba.jitclass(spec)
 class LedoitWolf:
     """"""
     def __init__(self, samples, shrinkage):
