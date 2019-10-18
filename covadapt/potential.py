@@ -51,8 +51,8 @@ class EigvalsAdapt(QuadPotential):
         self._cutoff = cutoff
 
         self._skip_first = 70
-        self._n_diag_only = 300
-        self._n_test = 100
+        self._n_diag_only = 500
+        self._n_test = 150
 
         self.dtype = dtype
         self._n = n
