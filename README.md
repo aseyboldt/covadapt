@@ -17,81 +17,31 @@ pip install git+https://github.com/aseyboldt/covadapt.git
 
 ## Usage
 
-There are three different methods implemented for finding eigenvalues
-of the posterior covariance:
-
-- `covadapt.eigvals_lw.eigh_lw_samples` This uses only the samples
-  in the last adaptation window, and finds the largest eigenvalues
-  of the ledoit-wolf estimate of the covariance matrix.
-- `covadapt.eigvals_reg.eigh_lw_samples_grad`. This uses samples
-  and their gradients to get ledoit-wolf estimates of the covariance
-  and the inverse covariance. The two estimates are then combined
-  on the log scale, and the largest and smallest eigenvalues of the
-  combined matrix are computed.
-- `covadapt.eigvals_reg.eigh_regularized_grad`. This uses a version
-  of regularized pca with l1 loss to find eigenvalues of the covariance
-  based on samples and gradients in the adaptation window. Of the three
-  methods this is by far the most experimental one.
-
-You can use one of the three methods like this:
+To use the new adaptation, define a pymc3 model as usual, and then create
+a potential from this library and pass it to `pm.NUTS`.
 
 ```python
-pot = covadapt.potential.EigvalsAdapt(
-    model.ndim,
-    np.zeros(model.ndim),
-    estimators=[
-        lambda samples, grads:
-            covadapt.eigvals_lw.eigh_lw_samples_grads(
-                samples, grads, n_eigs=10, n_eigs_grad=10, n_final=10
-            )
-    ],
-    display=True,
-)
-
-# TODO Update doc
-pot2 = covadapt.potential.EigvalsAdapt(
-    model.ndim,
-    np.zeros(model.ndim),
-    covadapt.eigvals_lw.eigh_lw_samples,
-    eigvalsfunc_kwargs=dict(
-        n_eigs=6,
-    ),
-    adaptation_window=200,
-)
-
-# TODO Update doc
-pot3 = covadapt.potential.EigvalsAdapt(
-    model.ndim,
-    np.zeros(model.ndim),
-    covadapt.eigvals_lw.eigh_lw_samples_grads,
-    eigvalsfunc_kwargs=dict(
-        n_eigs=6,
-        n_eigs_grad=6,
-        n_final=15,
-    ),
-    adaptation_window=200,
-)
-```
-
-
-```python
-import covadapt.potential
+import covadapt
 import pymc3 as pm
 
 with pm.Model() as model:
+    # Some pymc3 model
     pm.Normal('y', shape=100)
 
-    pot = covadapt.potential.EigvalsAdapt(
+    # Define the potential
+    pot = covadapt.EigvalsAdapt(
         model.ndim,
         np.zeros(model.ndim),
         estimators=[
             lambda samples, grads:
-                covadapt.eigvals_lw.eigh_lw_samples_grads(
+                covadapt.eigh_lw_samples_grads(
                     samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
                 )
         ],
         display=True,
     )
+
+    # Initialize the NUTS sampler with the new potential
     step = pm.NUTS(potential=pot)
     trace = pm.sample(step=step, draws=1000, tune=2000, chains=4)
 ```
@@ -112,12 +62,12 @@ cov = U @ Σ @ U.T + (np.eye(n) - U @ U.T)
 with pm.Model() as model:
     pm.MvNormal('a', shape=n, mu=0, cov=cov)
 
-    pot = covadapt.potential.EigvalsAdapt(
+    pot = covadapt.EigvalsAdapt(
         model.ndim,
         np.zeros(model.ndim),
         estimators=[
             lambda samples, grads:
-                covadapt.eigvals_lw.eigh_lw_samples_grads(
+                covadapt.eigh_lw_samples_grads(
                     samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
                 )
         ],
