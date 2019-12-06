@@ -2,5 +2,5 @@ numpy
 numba
 pymc3
 scipy
-sklearn
+scikit-learn
 theano
