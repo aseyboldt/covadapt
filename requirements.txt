@@ -1,0 +1,6 @@
+numpy
+numba
+pymc3
+scipy
+sklearn
+theano
