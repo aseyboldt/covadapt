@@ -9,8 +9,6 @@ But feel welcome to try it out, and tell me how it worked for your models!
 
 ## Install
 
-Make sure you have pymc3 and numba installed. Then do
-
 ```
 pip install git+https://github.com/aseyboldt/covadapt.git
 ```
