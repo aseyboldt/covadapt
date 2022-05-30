@@ -15,95 +15,62 @@ pip install git+https://github.com/aseyboldt/covadapt.git
 
 ## Usage
 
-To use the new adaptation, define a pymc3 model as usual, and then create
-a potential from this library and pass it to `pm.NUTS`.
+See the `notebooks/covadapt_intro.ipynb` notebook.
 
-```python
-import covadapt
-import pymc3 as pm
+## (Draft of an) Overview
 
-with pm.Model() as model:
-    # Some pymc3 model
-    pm.Normal('y', shape=100)
+When we use precondidioning with a mass matrix to improve performance of HMC
+based on previous draws, we often ignore information that we already computed:
+the gradients of the posterior density at those samples. But those gradients
+contain a lot of information about the posterior geometry and as such also
+about possible preconditioners. If for example we assume that the posterior is
+an $n$-dimensional normal distribution, then knowing the gradient at $n + 1$
+locations identifies the covariance matrix – and as such the optimal
+preconditioner of the posterior – *exactly*.
 
-    # Define the potential
-    pot = covadapt.EigvalsAdapt(
-        model.ndim,
-        np.zeros(model.ndim),
-        estimators=[
-            lambda samples, grads:
-                covadapt.eigh_lw_samples_grads(
-                    samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
-                )
-        ],
-        display=True,
-    )
+We can evaluate a precondition matrix $\hat{\Sigma}$ by thinking of it and a
+mean $\hat{\mu}$ as a normal distribution
+$p(x) = N(x\mid \hat{\mu}, \hat{\Sigma})$ that approximates the posterior distribution with density $p$ such that
 
-    # Initialize the NUTS sampler with the new potential
-    step = pm.NUTS(potential=pot)
-    trace = pm.sample(step=step, draws=1000, tune=2000, chains=4)
-```
+$$
+F(p \mid q) = \int p(x) \cdot \lVert \nabla p(x) - \nabla q(x)\rVert_{\hat{\Sigma}}^2 dx
+$$
 
-And a complete example that fails with the pymc3 standard sampler:
-```python
-n = 500
+is small. (Where $\lVert x\rVert_{\hat{\Sigma}}$ is the norm defined by the
+preconditioner). Equivalently as an affine transformation
+$T(x) = \hat{\Sigma}^\tfrac{1}{2}x + \mu$
+such that $F(p, T) = \int p(x) \cdot \lVert\nabla T(x) -
+\nabla N(x\mid 0, I)\rVert ^ 2 dx$ is minimal.
 
-U = np.array([[1, 0, -3, 0, 0, 6] + [0] * (n - 6),
-              [0, 5, 0, 3, -2, 0] + [0] * (n - 6)]).T
+Given an arbitrary but sufficiently nice posterior $p$, this is minimal if
+$\hat{\Sigma}$ is the geodesic mean of the covariance of $p$ and the inverse
+of the covariance of $\nabla p$ (TODO double check). If $p$ is normal, then $Cov(\nabla p) = Cov(p)^{-1}$, so the minimum is reached at the covariance matrix.
 
-U = U / np.sqrt((U ** 2).sum(0))[None, :]
-true_eigvals = U
-Σ = np.diag([2000000, 0.00001])
-cov = U @ Σ @ U.T + (np.eye(n) - U @ U.T)
+If we only allow diagonal preconditioning matrices, we can find the minimum
+analytically as 
+$$
+C = \text{diag}\left(\sqrt{\frac{\text{Var}(p)}{\text{Var}(\nabla p)}}\right).
+$$
 
+This diagonal preconditioner is already implemented in pymc and nuts-rs.
 
-with pm.Model() as model:
-    pm.MvNormal('a', shape=n, mu=0, cov=cov)
+If we approximate the integral in $F$ with a finite number of samples using a monte carlo estimete, we find that $F$ is minimal if
+$$
+\text{Cov}(x_i) = \hat{\Sigma} \text{Cov}(\nabla x_i) \hat{\Sigma}
+$$
 
-    pot = covadapt.EigvalsAdapt(
-        model.ndim,
-        np.zeros(model.ndim),
-        estimators=[
-            lambda samples, grads:
-                covadapt.eigh_lw_samples_grads(
-                    samples, grads, n_eigs=20, n_eigs_grad=20, n_final=40
-                )
-        ],
-        display=True,
-    )
+If we have more dimensions than draws this does not have a unique solution,
+so we introduce regularization. Some regularization methods based on the logdet or trace of $\Sigma$ or $\Sigma^{-1}$ still allow more or less explicit solutions as a algebraic Riccaati equations that sometimes can be made to scale reasonably with
+the dimension, but in my experiments the geodesic distance to $I$, $R(\hat\Sigma)=\sum\log(\sigma_i) ^ 2$ seems to work better.
 
-    step = pm.NUTS(potential=pot)
-    trace = pm.sample(step=step, draws=1000, tune=2000, chains=4)
-```
+To avoid quadratic memory and computational costs with the dimensionality,
+we write $\hat\Sigma = D(I + Q\Sigma Q^T - QQ^T)D$ where $Q\in\mathbb{R}^{N\times k}$ orthogonal and $D, \Sigma$ diagonal, so that we can perform
+all operations necessary for hmc or nuts in $O(Nk^2)$.
 
-## How it works
-
-Given some eigenvectors Q and eigenvalues Σ, we can represent a covariance
-matrix $C = I + QΣQ^T - QQ^T$ without storing anything more than those
-few vectors. The resulting matrix has the given eigenvectors and values,
-all other eigenvalues are 1. In order to run NUTS or some othe HMC we need
-matrix vector products $Cv$ and $C^{-\tfrac{1}{2}}v$, where $C^{-\tfrac{1}{2}}$
-is some factorization of $C^{-1}$. Thanks to the structure of $C$ we can
-implement both matrix actions easily.
-
-We also need some estimates for eigenvectors of the posterior covariance.
-One way to get some is to use the ledoit-wolf estimate of some samples.
-We do not want to store the whole matrix, but we can estimate the
-shrinkage parameter in batches (see the implementation in sklearn),
-and given the shrinkage parameter we can implement the matrix action
-and use lanczos or something similar to get large eigenvalues of that.
-This is what `covadapt.eigvals_lw.eigh_lw_samples` does.
-
-Interestingly, if you have a gaussian posterior, and you look at the gradients
-of the logp at the points of the samples, the covariance of those gradients
-will be the inverse posterior covariance. (This is because gradients are
-covariant while the values are contravariant, and for the standard normal both
-inner products are the identity). So we can do the same we did with the
-samples, but with the gradients at the positions of the samples.  This will
-give use estimates of the *small* eigenvalues of the posterior covariance.
-Unfortunatly, the two sets of eigenvectors are not orthogonal.  I take the mean
-of the two estimates on the matrix-log scale and estimate small and large
-eigenvectors of that mean.  This is `covadapt.eigvals_lw.eigh_regularized_grad`.
+We can now define a riemmannian metric on the space of all $(D, Q, \Sigma)$
+as a pullback of the fisher information metric of $N(0, \hat\Sigma)$
+and minimize $F$ using natural gradient descent. If we do this during tuning, we get similar behaviour as in a stochastic natural descent, and
+can avoid the saddle points during optimization.
 
 ## Acknowledgment
 
@@ -112,34 +79,3 @@ while trying to improve sampling of a (pretty awesome) model for portfolio
 optimization. Thanks a lot for making that possible!
 
 ![Quantopian logo](https://raw.githubusercontent.com/pymc-devs/pymc3/master/docs/quantopianlogo.jpg)
-
-
-## Some random rambling
-
-The third option is trying to use a different way to regularize eigenvector
-estimates: We can define the eigenvector of a matrix as $\argmax_{|x| = 1}
-x^TCx$.  We can modify this to include some regularization:
-
-$$
-\argmax_{|x| = 1} x^Tx - \gamma |x|_1.
-$$
-
-Unfortunately this introduces some problems, as the objective is not convex,
-(maybe it is spherically convex? eg Ferreira, Orizon & Iusem, Alfredo & Zoltán
-Németh, Sándor. (2014). Concepts and techniques of Optimization on the sphere.
-Top. accepted.) and the loss is not differentiable at $x_i = 0$. There is quite
-a lot of literature about optimization with l1 loss, so maybe this would work
-out better with a bit of work. The parameter gamma could maybe be estimated
-using cross validation of the samples.
-
-The current `covadapt.eigvals_reg` code uses this approch.
-
-Alternatively we could also try to do the whole regularized PCA in one go,
-and optimize something like: Given posterior samples $X$, find $Q$ orthogonal,
-$D$ diagonal and $\Sigma$ such that
-$$
-\text{std_normal_logp}(C^{-\tfrac{1}{2}}X) - \gamma |Q|_1
-$$
-is minimal, where $C^{-\tfrac{1}{2}} = (I + Q^T\Sigma^{-1/2}Q - Q^TQ)D^{-1/2}$.
-
-Paper about sparse eigenvectors: https://arxiv.org/pdf/1408.6686.pdf
