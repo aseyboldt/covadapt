@@ -58,21 +58,21 @@ $$
 C = \text{diag}\left(\sqrt{\frac{\text{Var}(p)}{\text{Var}(\nabla p)}}\right).
 $$
 
-This diagonal preconditioner is already implemented in pymc and nuts-rs.
+This diagonal preconditioner is already implemented in PyMC and nuts-rs.
 
-If we approximate the integral in $F$ with a finite number of samples using a monte carlo estimete, we find that $F$ is minimal if
+If we approximate the integral in $F$ with a finite number of samples using a Monte Carlo estimate, we find that $F$ is minimal if
 
 $$
 \text{Cov}(x_i) = \hat{\Sigma} \text{Cov}(\nabla x_i) \hat{\Sigma}
 $$
 
 If we have more dimensions than draws this does not have a unique solution,
-so we introduce regularization. Some regularization methods based on the logdet or trace of $\Sigma$ or $\Sigma^{-1}$ still allow more or less explicit solutions as a algebraic Riccatti equations that sometimes can be made to scale reasonably with
+so we introduce regularization. Some regularization methods based on the logdet or trace of $\Sigma$ or $\Sigma^{-1}$ still allow more or less explicit solutions as a algebraic Riccati equations that sometimes can be made to scale reasonably with
 the dimension, but in my experiments the geodesic distance to $I$, $R(\hat\Sigma)=\sum\log(\sigma_i) ^ 2$ seems to work better.
 
 To avoid quadratic memory and computational costs with the dimensionality,
 we write $\hat{\Sigma} = D(I + Q\Sigma Q^T - QQ^T)D$ where $Q\in\mathbb{R}^{N\times k}$ orthogonal and $D, \Sigma$ diagonal, so that we can perform
-all operations necessary for hmc or nuts in $O(Nk^2)$.
+all operations necessary for HMC or NUTS in $O(Nk)$.
 
 We can now define a Riemannian metric on the space of all $(D, Q, \Sigma)$
 as a pullback of the fisher information metric of $N(0, \hat\Sigma)$

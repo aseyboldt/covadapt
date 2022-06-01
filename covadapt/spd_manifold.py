@@ -6,20 +6,23 @@ import scipy
 from scipy import linalg
 import pymanopt
 import pymanopt.manifolds
-import pymanopt.solvers
+#import pymanopt.solvers
 from pymanopt.manifolds.product import _ProductTangentVector
-from pymanopt.solvers.conjugate_gradient import BetaTypes
+#from pymanopt.optimizers.conjugate_gradient import BetaTypes
 import sklearn
 import torch
 import aesara
 import pymc as pm
 import pandas as pd
+import logging
+
+logger = logging.getLogger("spd_manifold")
 
 
 class ExpStiefel(pymanopt.manifolds.Stiefel):
-    def retr(self, X, G):
+    def retraction(self, X, G):
         # See eg http://arxiv.org/abs/2003.10374
-        U = self.proj(X, G)
+        U = self.projection(X, G)
 
         W = linalg.expm(
             np.block([[X.T.dot(U), -U.T.dot(U)], [np.eye(self._p), X.T.dot(U)]])
@@ -65,7 +68,7 @@ class ScaledStiefelSPD(pymanopt.manifolds.manifold.Manifold):
         point_layout = tuple(manifold.point_layout for manifold in self._manifolds)
         super().__init__(name, dimension, point_layout=point_layout)
 
-    def inner(self, X, G, H):
+    def inner_product(self, X, G, H):
         vals = np.exp(X[1])
 
         U = X[2]
@@ -148,15 +151,15 @@ class ScaledStiefelSPD(pymanopt.manifolds.manifold.Manifold):
 
         return i_uu + i_dd + i_ud + i_du + i_ll + i_ld
 
-    def egrad2rgrad(self, X, dx):
-        d, l, U = X
+    def euclidean_to_riemannian_gradient(self, X, dx):
+        _, l, U = X
 
         N, K = U.shape
 
         errstate = {}
         try:
             errstate = np.seterr(all="raise")
-            d = np.exp(d)
+            #d = np.exp(d)
             l = np.exp(l)
         finally:
             np.seterr(**errstate)
@@ -232,7 +235,7 @@ class ScaledStiefelSPD(pymanopt.manifolds.manifold.Manifold):
             dz = [np.random.randn(*val.shape) for val in dx]
             dz[2] = self._vecs.randvec(U)
 
-            inner = self.inner(X, grad, dz, individual=True)
+            inner = self.inner_product(X, grad, dz, individual=True)
             directional = (
                 np.inner(dd, dz[0]) + np.inner(dl, dz[1]) + np.trace(dU.T @ dz[2])
             )
@@ -248,13 +251,13 @@ class ScaledStiefelSPD(pymanopt.manifolds.manifold.Manifold):
             amount * np.random.randn(k),
             amount * np.random.randn(n, k),
         ]
-        grads = self.proj(X, grads)
-        return self.retr(X, grads)
+        grads = self.projection(X, grads)
+        return self.retraction(X, grads)
 
-    def retr(self, X, dx):
+    def retraction(self, X, dx):
         if self._stiefel_retraction:
             diag, vals, U = [
-                man.retr(X[k], dx[k]) for k, man in enumerate(self._manifolds)
+                man.retraction(X[k], dx[k]) for k, man in enumerate(self._manifolds)
             ]
 
             if not self._enforce_no_signchange:
@@ -290,34 +293,34 @@ class ScaledStiefelSPD(pymanopt.manifolds.manifold.Manifold):
         super().__setattr__(key, value)
 
     @property
-    def typicaldist(self):
-        return np.sqrt(np.sum([man.typicaldist**2 for man in self._manifolds]))
+    def typical_dist(self):
+        return np.sqrt(np.sum([man.typical_dist**2 for man in self._manifolds]))
 
     def norm(self, X, G):
-        return np.sqrt(np.clip(self.inner(X, G, G), 1e-10, np.inf))
+        return np.sqrt(np.clip(self.inner_product(X, G, G), 1e-13, np.inf))
 
-    def proj(self, X, U):
+    def projection(self, X, U):
         return _ProductTangentVector(
-            [man.proj(X[k], U[k]) for k, man in enumerate(self._manifolds)]
+            [man.projection(X[k], U[k]) for k, man in enumerate(self._manifolds)]
         )
 
-    def rand(self):
-        return [man.rand() for man in self._manifolds]
+    def random_point(self):
+        return [man.random_point() for man in self._manifolds]
 
-    def randvec(self, X):
+    def random_tangent_vector(self, X):
         scale = len(self._manifolds) ** (-1 / 2)
         return _ProductTangentVector(
-            [scale * man.randvec(X[k]) for k, man in enumerate(self._manifolds)]
+            [scale * man.random_tangent_vector(X[k]) for k, man in enumerate(self._manifolds)]
         )
 
-    def zerovec(self, X):
+    def zero_vector(self, X):
         return _ProductTangentVector(
-            [man.zerovec(X[k]) for k, man in enumerate(self._manifolds)]
+            [man.zero_vector(X[k]) for k, man in enumerate(self._manifolds)]
         )
 
-    def transp(self, X1, X2, G):
+    def transport(self, X1, X2, G):
         return _ProductTangentVector(
-            [man.transp(X1[k], X2[k], G[k]) for k, man in enumerate(self._manifolds)]
+            [man.transport(X1[k], X2[k], G[k]) for k, man in enumerate(self._manifolds)]
         )
 
 
@@ -421,7 +424,7 @@ def _make_problem(
 
         return loss + reg_diag + reg_vals + reg_vecs
 
-    return pymanopt.Problem(manifold, cost, verbosity=verbosity)
+    return pymanopt.Problem(manifold, cost)
 
 
 class ManifoldSolver:
@@ -509,12 +512,12 @@ class ManifoldSolver:
         if "verbosity" in args:
             del args["verbosity"]
         if self.solver_method == "trust-region":
-            solver = pymanopt.solvers.TrustRegions(**args)
+            solver = pymanopt.optimizers.TrustRegions(**args)
         elif self.solver_method == "steepest-descent":
-            solver = pymanopt.solvers.SteepestDescent(**args)
+            solver = pymanopt.optimizers.SteepestDescent(**args)
         elif self.solver_method == "cg":
-            solver = pymanopt.solvers.ConjugateGradient(**args)
-        elif isinstance(self.solver_method, pymanopt.solvers.solver.Solver):
+            solver = pymanopt.optimizers.ConjugateGradient(**args)
+        elif isinstance(self.solver_method, pymanopt.optimizers.optimizer.Optimizer):
             solver = self.solver_method
         else:
             raise ValueError(f"Unknown solver method: {self.solver_method}")
@@ -552,7 +555,7 @@ class ManifoldSolver:
             print(start[1])
             print(start[2])
 
-        solution = solver.solve(problem, x=start)
+        solution = solver.run(problem, x=start)
         final_cost = problem.cost(solution)
 
         self._last_solution = solution
@@ -748,7 +751,7 @@ def matmul_eigs_single(vals, vecs, others, x):
     return out
 
 
-class SteepestDescent(pymanopt.solvers.solver.Solver):
+class SteepestDescent(pymanopt.optimizers.optimizer.Optimizer):
     """Riemannian steepest descent solver.
     Perform optimization using gradient descent with line search.
     This method first computes the gradient of the objective, and then
@@ -776,7 +779,7 @@ class SteepestDescent(pymanopt.solvers.solver.Solver):
         self._perturbance = perturbance
 
         if linesearch is None:
-            self._linesearch = pymanopt.solvers.linesearch.LineSearchBackTracking()
+            self._linesearch = pymanopt.optimizers.linesearch.LineSearchBackTracking()
         else:
             self._linesearch = linesearch
         self.linesearch = None
@@ -799,7 +802,8 @@ class SteepestDescent(pymanopt.solvers.solver.Solver):
             algorithm terminated before convergence.
         """
         man = problem.manifold
-        verbosity = problem.verbosity
+        #verbosity = problem.verbosity
+        verbosity = 0
         objective = problem.cost
         gradient = problem.grad
 
@@ -829,12 +833,12 @@ class SteepestDescent(pymanopt.solvers.solver.Solver):
         else:
             column_printer = pymanopt.tools.printer.VoidPrinter()
 
-        column_printer.print_header()
+        #column_printer.print_header()
 
-        self._start_optlog(
-            extraiterfields=["gradnorm"],
-            solverparams={"linesearcher": linesearch},
-        )
+        #self._start_optlog(
+        #    extraiterfields=["gradnorm"],
+        #    solverparams={"linesearcher": linesearch},
+        #)
 
         # Initialize iteration counter and timer
         iter = 0
@@ -854,7 +858,8 @@ class SteepestDescent(pymanopt.solvers.solver.Solver):
             column_printer.print_row([iter, cost, gradnorm, stepsize])
 
             if self._logverbosity >= 2:
-                self._append_optlog(iter, x, cost, gradnorm=gradnorm)
+                #self._append_optlog(iter, x, cost, gradnorm=gradnorm)
+                pass
 
             # Descent direction is minus the gradient
             desc_dir = -grad
@@ -901,7 +906,7 @@ class SteepestDescent(pymanopt.solvers.solver.Solver):
                 )
 
                 stop_reason = self._check_stopping_criterion(
-                    time0, stepsize=stepsize, gradnorm=gradnorm, iter=iter
+                    start_time=time0, step_size=stepsize, gradient_norm=gradnorm, iteration=iter
                 )
 
                 if stop_reason:
@@ -913,20 +918,21 @@ class SteepestDescent(pymanopt.solvers.solver.Solver):
         if self._logverbosity <= 0:
             return x
         else:
-            self._stop_optlog(
-                x,
-                objective(x),
-                stop_reason,
-                time0,
-                stepsize=stepsize,
-                gradnorm=gradnorm,
-                iter=iter,
-            )
-            return x, self._optlog
+            #self._stop_optlog(
+            #    x,
+            #    objective(x),
+            #    stop_reason,
+            #    time0,
+            #    stepsize=stepsize,
+            #    gradnorm=gradnorm,
+            #    iter=iter,
+            #)
+            #return x, self._optlog
+            pass
 
 
 # Adapted from pymanopt implementation
-class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
+class PerturbingConjugateGradient(pymanopt.optimizers.optimizer.Optimizer):
     """Riemannian conjugate gradient method.
 
     Perform optimization using nonlinear conjugate gradient method with
@@ -946,19 +952,20 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
 
     def __init__(
         self,
-        beta_type=pymanopt.solvers.conjugate_gradient.BetaTypes.HestenesStiefel,
+        #beta_type=pymanopt.solvers.conjugate_gradient.BetaTypes.HestenesStiefel,
         orth_value=np.inf,
         linesearch=None,
-        perturbance_cooldown=50,
+        #perturbance_cooldown=50,
+        perturbance_cooldown=5000,
         perturbance_threshold=1e-1,
         perturbance_stepsize_threshold=1e-5,
-        perturbance=0.01,
+        perturbance=0.00,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
-        self._beta_type = beta_type
+        #self._beta_type = beta_type
         self._orth_value = orth_value
 
         self._perturbance_cooldown = perturbance_cooldown
@@ -967,12 +974,13 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
         self._perturbance = perturbance
 
         if linesearch is None:
-            self._linesearch = pymanopt.solvers.linesearch.LineSearchAdaptive()
+            self._linesearch = pymanopt.optimizers.line_search.AdaptiveLineSearcher()
         else:
             self._linesearch = linesearch
         self.linesearch = None
+        self._logverbosity = 0
 
-    def solve(self, problem, x=None, reuselinesearch=False):
+    def run(self, problem, x=None, reuselinesearch=False):
         """Run CG method.
 
         Args:
@@ -991,9 +999,10 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
             algorithm terminated before convergence.
         """
         man = problem.manifold
-        verbosity = problem.verbosity
+        #verbosity = problem.verbosity
+        verbosity = 0
         objective = problem.cost
-        gradient = problem.grad
+        gradient = problem.riemannian_gradient
 
         perturbance_iter = self._perturbance_cooldown
         perturbance_cooldown = self._perturbance_cooldown
@@ -1027,20 +1036,20 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
         cost = objective(x)
         grad = gradient(x)
         gradnorm = man.norm(x, grad)
-        Pgrad = problem.precon(x, grad)
-        gradPgrad = man.inner(x, grad, Pgrad)
+        Pgrad = problem.preconditioner(x, grad)
+        gradPgrad = man.inner_product(x, grad, Pgrad)
 
         # Initial descent direction is the negative gradient
         desc_dir = -Pgrad
 
-        self._start_optlog(
-            extraiterfields=["gradnorm"],
-            solverparams={
-                "beta_type": self._beta_type,
-                "orth_value": self._orth_value,
-                "linesearcher": linesearch,
-            },
-        )
+        #self._start_optlog(
+        #    extraiterfields=["gradnorm"],
+        #    solverparams={
+        #        #"beta_type": self._beta_type,
+        #        "orth_value": self._orth_value,
+        #        "linesearcher": linesearch,
+        #    },
+        #)
 
         # Initialize iteration counter and timer
         iter = 0
@@ -1051,11 +1060,12 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
             column_printer.print_row([iter, cost, gradnorm, stepsize])
 
             if self._logverbosity >= 2:
-                self._append_optlog(iter, x, cost, gradnorm=gradnorm)
+                #self._append_optlog(iter, x, cost, gradnorm=gradnorm)
+                pass
 
             # The line search algorithms require the directional derivative of
             # the cost at the current point x along the search direction.
-            df0 = man.inner(x, grad, desc_dir)
+            df0 = man.inner_product(x, grad, desc_dir)
 
             # If we didn't get a descent direction: restart, i.e., switch to
             # the negative gradient. Equivalent to resetting the CG direction
@@ -1106,7 +1116,7 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
 
             else:
                 stop_reason = self._check_stopping_criterion(
-                    time0, gradnorm=gradnorm, iter=iter + 1, stepsize=stepsize
+                    start_time=time0, step_size=stepsize, gradient_norm=gradnorm, iteration=iter + 1
                 )
 
                 if stop_reason:
@@ -1139,12 +1149,12 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
             # newcost = objective(newx)
             # newgrad = gradient(newx)
             newgradnorm = man.norm(newx, newgrad)
-            Pnewgrad = problem.precon(newx, newgrad)
-            newgradPnewgrad = man.inner(newx, newgrad, Pnewgrad)
+            Pnewgrad = problem.preconditioner(newx, newgrad)
+            newgradPnewgrad = man.inner_product(newx, newgrad, Pnewgrad)
 
             # Apply the CG scheme to compute the next search direction
-            oldgrad = man.transp(x, newx, grad)
-            orth_grads = man.inner(newx, oldgrad, Pnewgrad) / newgradPnewgrad
+            oldgrad = man.transport(x, newx, grad)
+            orth_grads = man.inner_product(newx, oldgrad, Pnewgrad) / newgradPnewgrad
 
             # Powell's restart strategy (see page 12 of Hager and Zhang's
             # survey on conjugate gradient methods, for example)
@@ -1153,39 +1163,40 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
                 beta = 0
                 desc_dir = -Pnewgrad
             else:
-                desc_dir = man.transp(x, newx, desc_dir)
+                desc_dir = man.transport(x, newx, desc_dir)
 
-                if self._beta_type == BetaTypes.FletcherReeves:
-                    beta = newgradPnewgrad / gradPgrad
-                elif self._beta_type == BetaTypes.PolakRibiere:
+                #if self._beta_type == BetaTypes.FletcherReeves:
+                #    beta = newgradPnewgrad / gradPgrad
+                #elif self._beta_type == BetaTypes.PolakRibiere:
+                #    diff = newgrad - oldgrad
+                #    ip_diff = man.inner(newx, Pnewgrad, diff)
+                #    beta = max(0, ip_diff / gradPgrad)
+                #elif self._beta_type == BetaTypes.HestenesStiefel:
+                if True:
                     diff = newgrad - oldgrad
-                    ip_diff = man.inner(newx, Pnewgrad, diff)
-                    beta = max(0, ip_diff / gradPgrad)
-                elif self._beta_type == BetaTypes.HestenesStiefel:
-                    diff = newgrad - oldgrad
-                    ip_diff = man.inner(newx, Pnewgrad, diff)
+                    ip_diff = man.inner_product(newx, Pnewgrad, diff)
                     try:
-                        beta = max(0, ip_diff / man.inner(newx, diff, desc_dir))
+                        beta = max(0, ip_diff / man.inner_product(newx, diff, desc_dir))
                     # if ip_diff = man.inner(newx, diff, desc_dir) = 0
                     except ZeroDivisionError:
                         beta = 1
-                elif self._beta_type == BetaTypes.HagerZhang:
-                    diff = newgrad - oldgrad
-                    Poldgrad = man.transp(x, newx, Pgrad)
-                    Pdiff = Pnewgrad - Poldgrad
-                    deno = man.inner(newx, diff, desc_dir)
-                    numo = man.inner(newx, diff, Pnewgrad)
-                    numo -= (
-                        2
-                        * man.inner(newx, diff, Pdiff)
-                        * man.inner(newx, desc_dir, newgrad)
-                        / deno
-                    )
-                    beta = numo / deno
-                    # Robustness (see Hager-Zhang paper mentioned above)
-                    desc_dir_norm = man.norm(newx, desc_dir)
-                    eta_HZ = -1 / (desc_dir_norm * min(0.01, gradnorm))
-                    beta = max(beta, eta_HZ)
+                #elif self._beta_type == BetaTypes.HagerZhang:
+                #    diff = newgrad - oldgrad
+                #    Poldgrad = man.transp(x, newx, Pgrad)
+                #    Pdiff = Pnewgrad - Poldgrad
+                #    deno = man.inner(newx, diff, desc_dir)
+                #    numo = man.inner(newx, diff, Pnewgrad)
+                #    numo -= (
+                #        2
+                #        * man.inner(newx, diff, Pdiff)
+                #        * man.inner(newx, desc_dir, newgrad)
+                #        / deno
+                #    )
+                #    beta = numo / deno
+                #    # Robustness (see Hager-Zhang paper mentioned above)
+                #    desc_dir_norm = man.norm(newx, desc_dir)
+                #    eta_HZ = -1 / (desc_dir_norm * min(0.01, gradnorm))
+                #    beta = max(beta, eta_HZ)
                 else:
                     types = ", ".join([f"BetaTypes.{t}" for t in BetaTypes._fields])
                     raise ValueError(
@@ -1209,16 +1220,17 @@ class PerturbingConjugateGradient(pymanopt.solvers.solver.Solver):
         if self._logverbosity <= 0:
             return x
         else:
-            self._stop_optlog(
-                x,
-                cost,
-                stop_reason,
-                time0,
-                stepsize=stepsize,
-                gradnorm=gradnorm,
-                iter=iter,
-            )
-            return x, self._optlog
+            #self._stop_optlog(
+            #    x,
+            #    cost,
+            #    stop_reason,
+            #    time0,
+            #    stepsize=stepsize,
+            #    gradnorm=gradnorm,
+            #    iter=iter,
+            #)
+            #return x, self._optlog
+            pass
 
 
 class QuadPotentialFullAdapt(pm.step_methods.hmc.quadpotential.QuadPotentialFull):
@@ -1284,11 +1296,11 @@ class QuadPotentialFullAdapt(pm.step_methods.hmc.quadpotential.QuadPotentialFull
         self._adaptation_window = self._initial_adaptation_window
 
         optimizer = PerturbingConjugateGradient(
-            minstepsize=1e-6,
-            mingradnorm=1e-2,
+            min_step_size=1e-6,
+            min_gradient_norm=1e-2,
             perturbance_cooldown=20,
             perturbance=0.01,
-            maxiter=self._maxiter,
+            max_iterations=self._maxiter,
             perturbance_stepsize_threshold=1e-4,
             # beta_type=pymanopt.solvers.conjugate_gradient.BetaTypes.PolakRibiere,
         )
@@ -1299,9 +1311,9 @@ class QuadPotentialFullAdapt(pm.step_methods.hmc.quadpotential.QuadPotentialFull
             exp_stiefel=True,
             optimizer_args={
                 "verbosity": 0,
-                "minstepsize": 1e-8,
-                "mingradnorm": 1e-2,
-                "maxiter": self._maxiter,
+                "min_step_size": 1e-8,
+                "min_gradient_norm": 1e-2,
+                "max_iterations": self._maxiter,
             },
             solver_method=optimizer,
             alpha=self._alpha,
@@ -1328,7 +1340,10 @@ class QuadPotentialFullAdapt(pm.step_methods.hmc.quadpotential.QuadPotentialFull
                 if self.verbose:
                     print("Soft update")
                 self._cov = self._initial_estimator
-                self._cov.fit(*[np.array(val) for val in samples])
+                try:
+                    self._cov.fit(*[np.array(val) for val in samples])
+                except FloatingPointError as e:
+                    logger.exception(f"Error while updating mass matrix. Shape of draws = {draws.shape}")
             else:
                 scale = np.random.rand(len(grads[0]))
                 self._initial_cov = np.diag(np.exp(np.log((grads**2).sum(0)) * scale))
