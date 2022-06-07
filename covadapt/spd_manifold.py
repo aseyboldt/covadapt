@@ -422,7 +422,8 @@ def _make_problem(
         else:
             loss = 2 * loss_x
 
-        return loss + reg_diag + reg_vals + reg_vecs
+        loss = loss + reg_diag + reg_vals + reg_vecs
+        return torch.where(((log_vals < -30) | (log_vals > 30)).any(), np.inf, loss)
 
     return pymanopt.Problem(manifold, cost)
 
